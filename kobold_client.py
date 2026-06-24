@@ -24,13 +24,35 @@ def generate_tts(text: str, voice: str, instruction: str = None) -> bytes:
     with urllib.request.urlopen(req) as response:
         return response.read()
 
-def clone_voice(text: str, voice_ref: str, output_path: str):
+def clone_voice(text: str, voice_ref: str, output_path: str, reference_text: str = None):
     """
     Clones a voice using a reference voice.
     Saves the output to the specified path (which can be a directory or a filename).
     """
     print(f"[Package] Cloning voice: generating '{text[:50]}...' using ref '{voice_ref}'")
     
+    # Save the reference text transcript if provided
+    if reference_text:
+        # Resolve reference audio path
+        if os.path.isabs(voice_ref) or os.path.exists(voice_ref):
+            ref_audio_path = os.path.abspath(voice_ref)
+        else:
+            from koboldcpp_wrapper_server import kobold_server
+            if kobold_server._active_server and kobold_server._active_server.voices_dir:
+                ref_audio_path = os.path.join(kobold_server._active_server.voices_dir, voice_ref)
+            else:
+                ref_audio_path = None
+        
+        if ref_audio_path:
+            base, _ = os.path.splitext(ref_audio_path)
+            ref_txt_path = base + ".txt"
+            try:
+                with open(ref_txt_path, "w", encoding="utf-8") as f:
+                    f.write(reference_text)
+                print(f"[Package] Reference text saved to: {ref_txt_path}")
+            except Exception as e:
+                print(f"[Package] Warning: Could not save reference text to {ref_txt_path}: {e}")
+
     # Generate the audio bytes
     audio_bytes = generate_tts(text=text, voice=voice_ref)
     

@@ -65,8 +65,22 @@ def ui_stop_server():
     except Exception as e:
         return f"Failed to stop server: {e}", check_status()
 
+# Load Voice transcript if it exists
+def load_voice_transcript(voice_ref, voices_dir):
+    if not voice_ref or not voices_dir or not os.path.exists(voices_dir):
+        return ""
+    base, _ = os.path.splitext(voice_ref)
+    txt_path = os.path.join(voices_dir, base + ".txt")
+    if os.path.exists(txt_path):
+        try:
+            with open(txt_path, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except Exception:
+            pass
+    return ""
+
 # Trigger Voice Cloning
-def ui_clone_voice(text, voice_ref, output_name, voices_dir):
+def ui_clone_voice(text, voice_ref, output_name, voices_dir, reference_text):
     if not voice_ref:
         return None, "Error: Please select a reference voice template."
     if not text.strip():
@@ -77,7 +91,7 @@ def ui_clone_voice(text, voice_ref, output_name, voices_dir):
             return None, "Error: Server is offline. Please start the server first."
             
         output_file = os.path.join(os.getcwd(), output_name)
-        clone_voice(text, voice_ref, output_file)
+        clone_voice(text, voice_ref, output_file, reference_text=reference_text)
         return output_file, f"Success! Saved to: {output_file}"
     except Exception as e:
         return None, f"Voice cloning failed: {e}"
@@ -230,6 +244,14 @@ def launch_ui(auto_start_args=None):
                         
                         btn_refresh = gr.Button("🔄 Refresh Voice List", size="sm")
                         
+                        initial_transcript = load_voice_transcript(initial_voices[0], voices_dir.value or default_voices) if initial_voices else ""
+                        ref_text_box = gr.Textbox(
+                            value=initial_transcript,
+                            label="Voice Template Reference Text / Transcript (optional)",
+                            placeholder="Enter the text that matches the reference audio file to improve voice cloning quality...",
+                            lines=2
+                        )
+                        
                         gr.Markdown("--- or upload a new template ---")
                         voice_uploader = gr.File(
                             label="Upload Voice Template (.wav)", 
@@ -290,6 +312,12 @@ def launch_ui(auto_start_args=None):
         # Wire events
         action_mode.change(on_mode_change, inputs=action_mode, outputs=model_path)
         
+        voice_dropdown.change(
+            load_voice_transcript,
+            inputs=[voice_dropdown, voices_dir],
+            outputs=ref_text_box
+        )
+        
         btn_start.click(
             ui_start_server, 
             inputs=[action_mode, model_path, tokenizer_path, voices_dir], 
@@ -311,7 +339,7 @@ def launch_ui(auto_start_args=None):
         
         btn_clone.click(
             ui_clone_voice,
-            inputs=[clone_text, voice_dropdown, clone_output_name, voices_dir],
+            inputs=[clone_text, voice_dropdown, clone_output_name, voices_dir, ref_text_box],
             outputs=[clone_audio, clone_status]
         )
         
