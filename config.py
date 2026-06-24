@@ -4,7 +4,7 @@ import os
 PACKAGE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 # KoboldCPP executable path inside the package
-KOBOLD_EXE = os.path.join(PACKAGE_DIR, "koboldcpp-concedo", "koboldcpp.exe")
+KOBOLD_EXE = os.path.join(PACKAGE_DIR, "koboldcpp.exe")
 
 # Server Config
 PORT = 50020

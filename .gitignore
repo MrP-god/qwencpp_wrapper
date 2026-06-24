@@ -1,5 +1,5 @@
-# KoboldCPP engine executable binary folder
-koboldcpp-concedo/
+# KoboldCPP executable binary
+koboldcpp.exe
 
 # KoboldCPP temp files
 tmp_temp/
