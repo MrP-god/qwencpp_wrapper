@@ -194,7 +194,7 @@ def render_history_html(history):
                 <h4 style="margin: 0; color: #818CF8; font-size: 0.95rem; font-weight: 700; word-break: break-all;">Phrase: "{phrase}"</h4>
                 <div style="display: flex; align-items: center; gap: 0.6rem;">
                     <span style="font-size: 0.75rem; color: #9CA3AF; background: rgba(255,255,255,0.05); padding: 0.1rem 0.4rem; border-radius: 4px;">{len(clips)} clips</span>
-                    <button onclick="deletePhrase('{safe_phrase}')" style="background: transparent; border: 1px solid rgba(239, 68, 68, 0.3); color: #EF4444; font-size: 0.75rem; cursor: pointer; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 4px; transition: all 0.2s ease;">🗑️ Delete Group</button>
+                    <button onclick="deletePhrase('{safe_phrase}')" style="background: transparent; border: 1px solid rgba(239, 68, 68, 0.3); color: #EF4444; font-size: 0.75rem; cursor: pointer; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 4px; transition: all 0.2s ease;">Delete Group</button>
                 </div>
             </div>
             <div style="display: flex; flex-direction: column; gap: 0.6rem;">
@@ -203,10 +203,12 @@ def render_history_html(history):
         for clip in clips:
             idx = clip["index"]
             status = clip["status"]
-            audio_url = clip.get("audio_path")
-            json_url = clip.get("json_path")
+            audio_url = clip.get("audio_path", "")
+            json_url = clip.get("json_path", "")
+            txt_url = clip.get("txt_path", "")
+            clip_id = clip.get("id", "")
             
-            status_badge = "🟢" if status == "Success" else "🔴"
+            status_badge = "Success" if status == "Success" else "Failed"
             
             html += f'''
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.35rem 0; border-bottom: 1px dashed rgba(255, 255, 255, 0.03); flex-wrap: wrap;">
@@ -220,10 +222,10 @@ def render_history_html(history):
                 html += f'''
                 <audio src="{audio_url}" controls style="height: 28px; max-width: 280px; flex-grow: 1;"></audio>
                 <div style="display: flex; gap: 0.4rem;">
-                    <a href="{audio_url}" download="voice_clip_{idx}.wav" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.3rem 0.6rem; border-radius: 5px; border: 1px solid rgba(129, 140, 248, 0.25); background: rgba(99, 102, 241, 0.1); color: #818CF8; font-size: 0.75rem; text-decoration: none; font-weight: 600; transition: all 0.2s ease;">📥 WAV</a>
-                    <a href="{json_url}" download="meta_clip_{idx}.json" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.3rem 0.6rem; border-radius: 5px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); color: #D1D5DB; font-size: 0.75rem; text-decoration: none; font-weight: 600; transition: all 0.2s ease;">📄 JSON</a>
-                    <button onclick="saveClipToVoices('{audio_url}')" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.3rem 0.6rem; border-radius: 5px; border: 1px solid rgba(16, 185, 129, 0.25); background: rgba(16, 185, 129, 0.1); color: #10B981; font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease;">💾 Save to Voices</button>
-                    <button onclick="deleteClip('{audio_url}')" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.3rem 0.6rem; border-radius: 5px; border: 1px solid rgba(239, 68, 68, 0.25); background: rgba(239, 68, 68, 0.1); color: #EF4444; font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease;">🗑️ Delete</button>
+                    <a href="{audio_url}" download="voice_clip_{idx}.wav" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.3rem 0.6rem; border-radius: 5px; border: 1px solid rgba(129, 140, 248, 0.25); background: rgba(99, 102, 241, 0.1); color: #818CF8; font-size: 0.75rem; text-decoration: none; font-weight: 600; transition: all 0.2s ease;">WAV</a>
+                    <a href="{txt_url}" download="voice_clip_{idx}.txt" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.3rem 0.6rem; border-radius: 5px; border: 1px solid rgba(16, 185, 129, 0.25); background: rgba(16, 185, 129, 0.1); color: #10B981; font-size: 0.75rem; text-decoration: none; font-weight: 600; transition: all 0.2s ease;">TXT</a>
+                    <a href="{json_url}" download="meta_clip_{idx}.json" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.3rem 0.6rem; border-radius: 5px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); color: #D1D5DB; font-size: 0.75rem; text-decoration: none; font-weight: 600; transition: all 0.2s ease;">JSON</a>
+                    <button onclick="deleteClip('{clip_id}')" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.3rem 0.6rem; border-radius: 5px; border: 1px solid rgba(239, 68, 68, 0.25); background: rgba(239, 68, 68, 0.1); color: #EF4444; font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease;">Delete</button>
                 </div>
                 '''
             else:
@@ -236,11 +238,11 @@ def render_history_html(history):
     
     # Inject JavaScript triggers using hidden buttons to bypass Svelte reactive state blocks
     html += '''<script>
-    function deleteClip(audioPath) {
+    function deleteClip(clipId) {
         const el = document.querySelector("#delete_trigger textarea") || document.querySelector("#delete_trigger input");
         const btn = document.querySelector("#delete_btn button") || document.querySelector("#delete_btn input") || document.querySelector("#delete_btn");
         if (el && btn) {
-            el.value = audioPath;
+            el.value = clipId;
             el.dispatchEvent(new Event("input", { bubbles: true }));
             el.dispatchEvent(new Event("change", { bubbles: true }));
             btn.click();
@@ -260,18 +262,6 @@ def render_history_html(history):
             console.error("Delete Phrase elements not found:", {el, btn});
         }
     }
-    function saveClipToVoices(audioPath) {
-        const el = document.querySelector("#save_trigger textarea") || document.querySelector("#save_trigger input");
-        const btn = document.querySelector("#save_btn button") || document.querySelector("#save_btn input") || document.querySelector("#save_btn");
-        if (el && btn) {
-            el.value = audioPath;
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-            el.dispatchEvent(new Event("change", { bubbles: true }));
-            btn.click();
-        } else {
-            console.error("Save elements not found:", {el, btn});
-        }
-    }
     </script>'''
     return html
 
@@ -285,10 +275,10 @@ def ui_design_voice_batch(text, language, prompt, multiplier, history):
         raise gr.Error("Error: Please enter text to generate.")
         
     try:
-        if "🔴" in check_status():
+        if "Online" not in check_status():
             raise gr.Error("Error: Server is offline. Please start the server first.")
         
-        phrases = [line.strip() for line in text.split("\n") if line.strip()]
+        phrases = [line.strip() for line in text.split("\\n") if line.strip()]
         if not phrases:
             raise gr.Error("Error: Please enter at least one non-empty phrase.")
             
@@ -300,8 +290,9 @@ def ui_design_voice_batch(text, language, prompt, multiplier, history):
             
         yield history, render_history_html(history), f"Starting batch generation: {len(phrases)} phrases x {multiplier} repetitions = {total_steps} clips."
         
-        # Save dynamically to temp folder so Gradio serves it correctly without path mismatches
-        output_dir = tempfile.gettempdir()
+        from qwencpp_wrapper.qwen_client import generate_tts
+        import base64
+        import json
         
         for i, phrase in enumerate(phrases):
             if cancel_generation:
@@ -315,44 +306,39 @@ def ui_design_voice_batch(text, language, prompt, multiplier, history):
                 
                 try:
                     timestamp = int(time.time() * 1000)
-                    wav_filename = f"design_{timestamp}_{step_count}.wav"
-                    wav_filepath = os.path.join(output_dir, wav_filename)
-                    
                     full_prompt = f"language: {language}. {prompt}" if language else prompt
                     
-                    design_voice(phrase, full_prompt, wav_filepath)
+                    # Generate TTS audio bytes directly in memory
+                    audio_bytes = generate_tts(text=phrase, voice=None, instruction=full_prompt)
                     
-                    json_filename = f"design_{timestamp}_{step_count}.json"
-                    json_filepath = os.path.join(output_dir, json_filename)
+                    # Convert to base64 URIs
+                    b64_audio = base64.b64encode(audio_bytes).decode("utf-8")
+                    audio_url = f"data:audio/wav;base64,{b64_audio}"
+                    
                     meta = {
                         "prompt": full_prompt,
                         "text": phrase
                     }
-                    with open(json_filepath, "w", encoding="utf-8") as f:
-                        json.dump(meta, f, indent=2, ensure_ascii=False)
-                        
-                    # Track for automatic cleanup on exit
-                    session_temp_files.append(wav_filepath)
-                    session_temp_files.append(json_filepath)
+                    meta_json = json.dumps(meta, indent=2, ensure_ascii=False)
+                    b64_json = base64.b64encode(meta_json.encode("utf-8")).decode("utf-8")
+                    json_url = f"data:application/json;charset=utf-8;base64,{b64_json}"
                     
-                    # Convert to absolute path formatted for Gradio 5/6 API URL
-                    abs_wav = os.path.abspath(wav_filepath).replace("\\", "/")
-                    abs_json = os.path.abspath(json_filepath).replace("\\", "/")
-                    
-                    # Prefix with /gradio_api/file= for routing
-                    audio_url = f"/gradio_api/file={abs_wav}"
-                    json_url = f"/gradio_api/file={abs_json}"
+                    b64_txt = base64.b64encode(phrase.encode("utf-8")).decode("utf-8")
+                    txt_url = f"data:text/plain;charset=utf-8;base64,{b64_txt}"
                     
                     history.append({
+                        "id": f"clip_{timestamp}_{step_count}",
                         "phrase": phrase,
                         "index": rep,
                         "audio_path": audio_url,
                         "json_path": json_url,
+                        "txt_path": txt_url,
                         "status": "Success"
                     })
                 except Exception as e:
                     print(f"Error generating phrase '{phrase}' clip {rep}: {e}")
                     history.append({
+                        "id": f"clip_failed_{step_count}",
                         "phrase": phrase,
                         "index": rep,
                         "status": "Failed",
@@ -362,136 +348,27 @@ def ui_design_voice_batch(text, language, prompt, multiplier, history):
                 yield history, render_history_html(history), progress_msg
                 
         if cancel_generation:
-            yield history, render_history_html(history), "⏹️ Generation stopped by user."
+            yield history, render_history_html(history), "Generation stopped by user."
         else:
-            yield history, render_history_html(history), "✅ Batch generation complete! Finished " + str(total_steps) + " clips."
+            yield history, render_history_html(history), f"Batch generation complete! Finished {total_steps} clips."
     except Exception as e:
         raise gr.Error(f"Voice design batch generation failed: {e}")
 
-def on_delete_clip(audio_path, history):
-    if not audio_path or history is None:
+def on_delete_clip(clip_id, history):
+    if not clip_id or history is None:
         return history, render_history_html(history)
-        
-    if audio_path.startswith("/gradio_api/file="):
-        path = audio_path[17:]
-    elif audio_path.startswith("/file="):
-        path = audio_path[6:]
-    elif audio_path.startswith("file="):
-        path = audio_path[5:]
-    else:
-        path = audio_path
-        
-    path = os.path.abspath(path)
-    
-    # Delete wav
-    try:
-        if os.path.exists(path):
-            os.remove(path)
-            print(f"[UI] Deleted audio file: {path}")
-    except Exception as e:
-        print(f"[UI] Error deleting WAV: {e}")
-        
-    # Delete json
-    json_path = os.path.splitext(path)[0] + ".json"
-    try:
-        if os.path.exists(json_path):
-            os.remove(json_path)
-            print(f"[UI] Deleted JSON file: {json_path}")
-    except Exception as e:
-        print(f"[UI] Error deleting JSON: {e}")
-        
-    # Filter history
-    new_history = []
-    for item in history:
-        item_path = item.get("audio_path", "")
-        def get_abs(p):
-            if p.startswith("/gradio_api/file="):
-                return os.path.abspath(p[17:])
-            if p.startswith("/file="):
-                return os.path.abspath(p[6:])
-            return os.path.abspath(p)
-        if get_abs(item_path) != path:
-            new_history.append(item)
-            
+    new_history = [item for item in history if item.get("id") != clip_id]
     return new_history, render_history_html(new_history)
 
 def on_delete_phrase(phrase, history):
     if not phrase or history is None:
         return history, render_history_html(history)
-        
-    for item in history:
-        if item.get("phrase") == phrase:
-            audio_path = item.get("audio_path", "")
-            if audio_path:
-                if audio_path.startswith("/gradio_api/file="):
-                    path = os.path.abspath(audio_path[17:])
-                elif audio_path.startswith("/file="):
-                    path = os.path.abspath(audio_path[6:])
-                else:
-                    path = os.path.abspath(audio_path)
-                try:
-                    if os.path.exists(path):
-                        os.remove(path)
-                except Exception as e:
-                    print(f"[UI] Error deleting {path}: {e}")
-                
-                json_path = os.path.splitext(path)[0] + ".json"
-                try:
-                    if os.path.exists(json_path):
-                        os.remove(json_path)
-                except Exception as e:
-                    print(f"[UI] Error deleting {json_path}: {e}")
-                    
     new_history = [item for item in history if item.get("phrase") != phrase]
     return new_history, render_history_html(new_history)
 
 def on_save_clip(audio_path, voices_dir_path, history):
-    if not audio_path or not voices_dir_path:
-        return "Error: Voices folder path is empty.", gr.skip()
-        
-    if not os.path.exists(voices_dir_path):
-        try:
-            os.makedirs(voices_dir_path, exist_ok=True)
-        except Exception as e:
-            return f"Error: Voices folder does not exist and could not be created: {e}", gr.skip()
-            
-    if audio_path.startswith("/gradio_api/file="):
-        path = audio_path[17:]
-    elif audio_path.startswith("/file="):
-        path = audio_path[6:]
-    else:
-        path = audio_path
-        
-    path = os.path.abspath(path)
-    
-    if not os.path.exists(path):
-        return f"Error: Temp file not found: {path}", gr.skip()
-        
-    json_path = os.path.splitext(path)[0] + ".json"
-    phrase_text = ""
-    if os.path.exists(json_path):
-        try:
-            with open(json_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-                phrase_text = meta.get("text", "")
-        except Exception:
-            pass
-            
-    try:
-        filename = os.path.basename(path)
-        dest_wav = os.path.join(voices_dir_path, filename)
-        shutil.copy(path, dest_wav)
-        
-        # Write matching transcript file for voice cloning template
-        dest_txt = os.path.splitext(dest_wav)[0] + ".txt"
-        with open(dest_txt, "w", encoding="utf-8") as f:
-            f.write(phrase_text)
-            
-        print(f"[UI] Saved designed voice to: {dest_wav}")
-        new_voices = get_voice_list(voices_dir_path)
-        return f"Success! Saved clip as '{filename}' to Voices folder.", gr.Dropdown(choices=new_voices)
-    except Exception as e:
-        return f"Failed to save clip: {e}", gr.skip()
+    return "Feature disabled. Use WAV/TXT/JSON downloads directly.", gr.skip()
+
 
 def get_voice_list(voices_dir):
     if not voices_dir or not os.path.exists(voices_dir):
