@@ -4,16 +4,18 @@ import os
 import random
 from koboldcpp_wrapper_server import config
 
-def generate_tts(text: str, voice: str, instruction: str = None) -> bytes:
+def generate_tts(text: str, voice: str = None, instruction: str = None) -> bytes:
     """
-    Proxy function to send TTS request to the KoboldCPP server.
+    Proxy function to send TTS request to the QwenTTS server.
     """
     payload = {
-        "text": text,
-        "voice": voice
+        "input": text,
+        "response_format": "wav"
     }
+    if voice:
+        payload["voice"] = voice
     if instruction:
-        payload["instruction"] = instruction
+        payload["instructions"] = instruction
 
     req = urllib.request.Request(
         config.TTS_URL,
@@ -37,9 +39,9 @@ def clone_voice(text: str, voice_ref: str, output_path: str, reference_text: str
         if os.path.isabs(voice_ref) or os.path.exists(voice_ref):
             ref_audio_path = os.path.abspath(voice_ref)
         else:
-            from koboldcpp_wrapper_server import kobold_server
-            if kobold_server._active_server and kobold_server._active_server.voices_dir:
-                ref_audio_path = os.path.join(kobold_server._active_server.voices_dir, voice_ref)
+            from koboldcpp_wrapper_server import qwen_server
+            if qwen_server._active_server and qwen_server._active_server.voices_dir:
+                ref_audio_path = os.path.join(qwen_server._active_server.voices_dir, voice_ref)
             else:
                 ref_audio_path = None
         
@@ -78,11 +80,8 @@ def design_voice(text: str, design_prompt: str, output_path: str):
     """
     config.log(f"[Package] Designing voice: generating '{text[:50]}...' with instruction '{design_prompt}'")
     
-    # Generate a unique speaker ID to force a unique speaker seed
-    speaker_name = f"designed_speaker_{random.randint(100000, 999999)}"
-    
     # Generate the audio bytes
-    audio_bytes = generate_tts(text=text, voice=speaker_name, instruction=design_prompt)
+    audio_bytes = generate_tts(text=text, instruction=design_prompt)
     
     # Resolve the output path
     if os.path.isdir(output_path):

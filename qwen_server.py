@@ -5,7 +5,7 @@ import subprocess
 import socket
 from koboldcpp_wrapper_server import config
 
-class KoboldServerManager:
+class QwenServerManager:
     def __init__(self, action_type, model_path, tokenizer_path, voices_dir=None, 
                  gpu_backend="vulkan", use_tts_gpu=True, threads=None, tts_threads=None, gpu_layers=-1):
         self.action_type = action_type
@@ -22,10 +22,10 @@ class KoboldServerManager:
         self.log_file = None
 
     def kill_existing_processes(self):
-        """Kill any running koboldcpp.exe processes to free the port and GPU memory."""
-        config.log("[Server] Cleaning up any existing KoboldCPP processes...")
+        """Kill any running qwen-tts-server.exe processes to free the port and GPU memory."""
+        config.log("[Server] Cleaning up any existing QwenTTS processes...")
         if sys.platform == "win32":
-            subprocess.run("taskkill /f /im koboldcpp.exe", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)
+            subprocess.run("taskkill /f /im qwen-tts-server.exe", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)
             time.sleep(2)
 
     def start(self):
@@ -37,45 +37,31 @@ class KoboldServerManager:
         if not os.path.exists(self.tokenizer_path):
             raise FileNotFoundError(f"Tokenizer not found: {self.tokenizer_path}")
             
-        # Setup environment to use package temp directory
-        temp_dir = os.path.join(config.PACKAGE_DIR, "tmp_temp")
-        os.makedirs(temp_dir, exist_ok=True)
-        os.environ["TEMP"] = temp_dir
-        os.environ["TMP"] = temp_dir
+        # Setup environment
+        env = os.environ.copy()
+        
+        # GPU Acceleration Backend
+        backend_lower = self.gpu_backend.lower()
+        if "vulkan" in backend_lower:
+            env["GGML_BACKEND"] = "Vulkan0"
+        elif "cuda" in backend_lower:
+            env["GGML_BACKEND"] = "CUDA0"
+        else:
+            env["GGML_BACKEND"] = "CPU"
+        
+        # Thread Tuning (GGML uses GGML_NUM_THREADS)
+        t_val = self.threads if self.threads is not None else self.tts_threads
+        if t_val is not None:
+            env["GGML_NUM_THREADS"] = str(t_val)
 
         # Build startup command
         cmd = [
-            config.KOBOLD_EXE,
+            config.QWEN_EXE,
+            "--model", self.model_path,
+            "--codec", self.tokenizer_path,
+            "--host", "127.0.0.1",
             "--port", str(config.PORT)
         ]
-        
-        # GPU Acceleration Backend
-        if self.gpu_backend == "vulkan":
-            cmd.append("--usevulkan")
-        elif self.gpu_backend == "cuda":
-            cmd.append("--usecuda")
-        else:
-            cmd.append("--usecpu")
-            
-        # TTS GPU Offload
-        if self.use_tts_gpu and self.gpu_backend != "cpu":
-            cmd.append("--ttsgpu")
-            
-        # Thread Tuning
-        if self.threads is not None:
-            cmd.extend(["--threads", str(self.threads)])
-        if self.tts_threads is not None:
-            cmd.extend(["--ttsthreads", str(self.tts_threads)])
-            
-        # VRAM Offload
-        if self.gpu_layers is not None:
-            cmd.extend(["--gpulayers", str(self.gpu_layers)])
-            
-        # Load TTS models
-        cmd.extend([
-            "--ttsmodel", self.model_path,
-            "--ttswavtokenizer", self.tokenizer_path
-        ])
         
         # If action_type is "base" (cloning), we specify the voices directory
         if self.action_type == "base":
@@ -85,16 +71,17 @@ class KoboldServerManager:
                 raise FileNotFoundError(f"Voices directory not found: {self.voices_dir}")
             cmd.extend(["--ttsdir", self.voices_dir])
 
-        config.log(f"[Server] Launching KoboldCPP server...")
+        config.log(f"[Server] Launching QwenTTS server...")
         config.log(f"[Server] Model: {self.model_path}")
         config.log(f"[Server] Tokenizer: {self.tokenizer_path}")
         if self.voices_dir:
             config.log(f"[Server] Voices Dir: {self.voices_dir}")
+        config.log(f"[Server] Backend: {self.gpu_backend.upper()}")
         config.log(f"[Server] Command: {' '.join(cmd)}")
         
         # Write server logs to the current working directory (consumer's folder)
         log_dir = os.getcwd()
-        self.log_path = os.path.join(log_dir, "kobold_server.log")
+        self.log_path = os.path.join(log_dir, "qwen_server.log")
         self.log_file = open(self.log_path, "w", encoding="utf-8")
         
         self.process = subprocess.Popen(
@@ -102,10 +89,10 @@ class KoboldServerManager:
             cwd=config.PACKAGE_DIR,
             stdout=self.log_file,
             stderr=subprocess.STDOUT,
-            env=os.environ
+            env=env
         )
         
-        config.log("[Server] Waiting for KoboldCPP server to initialize (this can take up to 60 seconds)...")
+        config.log("[Server] Waiting for QwenTTS server to initialize (this can take up to 60 seconds)...")
         start_time = time.time()
         initialized = False
         
@@ -114,7 +101,7 @@ class KoboldServerManager:
                 self.log_file.close()
                 with open(self.log_path, "r", encoding="utf-8", errors="ignore") as lf:
                     stdout = lf.read()
-                raise RuntimeError(f"KoboldCPP failed to start. Logs:\n{stdout}")
+                raise RuntimeError(f"QwenTTS failed to start. Logs:\n{stdout}")
 
             # Check if port is open
             try:
@@ -135,11 +122,11 @@ class KoboldServerManager:
             
         if not initialized:
             self.terminate()
-            raise TimeoutError("KoboldCPP server initialization timed out.")
+            raise TimeoutError("QwenTTS server initialization timed out.")
 
     def terminate(self):
         if self.process:
-            config.log("[Server] Terminating KoboldCPP server process...")
+            config.log("[Server] Terminating QwenTTS server process...")
             self.process.terminate()
             try:
                 self.process.wait(timeout=5)
@@ -162,7 +149,7 @@ def start_server(action_type: str, model_path: str, tokenizer_path: str, voices_
                  gpu_backend: str = "vulkan", use_tts_gpu: bool = True, threads: int = None,
                  tts_threads: int = None, gpu_layers: int = -1, debug: bool = False):
     """
-    Initializes the proxy by starting the KoboldCPP server with the specified parameters.
+    Initializes the proxy by starting the QwenTTS server with the specified parameters.
     """
     global _active_server
     config.DEBUG = debug
@@ -171,7 +158,7 @@ def start_server(action_type: str, model_path: str, tokenizer_path: str, voices_
         config.log("[Server] A server is already running. Shutting it down first...")
         shutdown_server()
         
-    _active_server = KoboldServerManager(
+    _active_server = QwenServerManager(
         action_type=action_type,
         model_path=model_path,
         tokenizer_path=tokenizer_path,
@@ -187,7 +174,7 @@ def start_server(action_type: str, model_path: str, tokenizer_path: str, voices_
 
 def shutdown_server():
     """
-    Shuts down the active KoboldCPP server and cleans up processes.
+    Shuts down the active QwenTTS server and cleans up processes.
     """
     global _active_server
     if _active_server is not None:
@@ -197,4 +184,4 @@ def shutdown_server():
     else:
         config.log("[Server] No active server tracked. Running fallback process cleanup...")
         if sys.platform == "win32":
-            subprocess.run("taskkill /f /im koboldcpp.exe", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)
+            subprocess.run("taskkill /f /im qwen-tts-server.exe", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)

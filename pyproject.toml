@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "koboldcpp_wrapper_server"
 version = "1.0.0"
-description = "A Python wrapper and Web UI for KoboldCPP TTS (voice cloning and design)"
+description = "A Python wrapper and Web UI for QwenTTS (voice cloning and design)"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
@@ -27,7 +27,7 @@ packages = ["koboldcpp_wrapper_server"]
 
 [tool.setuptools.exclude-package-data]
 koboldcpp_wrapper_server = [
-    "koboldcpp.exe",
+    "qwen-tts-server.exe",
     "*.log",
     "*.bat",
     "tmp_temp/*",

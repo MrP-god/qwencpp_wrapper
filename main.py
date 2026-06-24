@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from koboldcpp_wrapper_server import start_server, shutdown_server, launch_ui, config
 
 def main():
-    parser = argparse.ArgumentParser(description="KoboldCPP TTS Server & Web UI CLI")
+    parser = argparse.ArgumentParser(description="QwenTTS Server & Web UI CLI")
     parser.add_argument("--ui", action="store_true", help="Launch the Gradio Web UI instead of running in console mode")
     parser.add_argument("--action", choices=["base", "design"], help="Action mode (required for console mode, optional for UI mode)")
     parser.add_argument("--model", help="Path to the model GGUF file")
@@ -38,7 +38,7 @@ def main():
         try:
             start_server(args.action, args.model, args.tokenizer, args.voices, debug=True)
             print("\n" + "="*60)
-            print(f"KoboldCPP Server is running with '{args.action}' action.")
+            print(f"QwenTTS Server is running with '{args.action}' action.")
             print(f"Web UI: http://127.0.0.1:{config.PORT}")
             print("Press Ctrl+C to stop the server.")
             print("="*60 + "\n")

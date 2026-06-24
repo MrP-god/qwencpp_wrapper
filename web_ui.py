@@ -203,11 +203,11 @@ def launch_ui(auto_start_args=None):
         except Exception as e:
             print(f"[UI] Autostart failed: {e}")
 
-    with gr.Blocks(title="KoboldCPP Voice Studio", theme=gr.themes.Soft(primary_hue="teal", secondary_hue="slate")) as demo:
+    with gr.Blocks(title="QwenTTS Voice Studio", theme=gr.themes.Soft(primary_hue="teal", secondary_hue="slate")) as demo:
         gr.Markdown(
             """
-            # 🎙️ KoboldCPP Voice Studio
-            An interactive dashboard to manage KoboldCPP and generate voice cloning/design outputs.
+            # 🎙️ QwenTTS Voice Studio
+            An interactive dashboard to manage Qwen3-TTS (qwentts.cpp) and generate voice cloning/design outputs.
             """
         )
         
@@ -249,23 +249,25 @@ def launch_ui(auto_start_args=None):
                     )
                     use_tts_gpu = gr.Checkbox(
                         value=True,
-                        label="Use GPU for TTS (--ttsgpu)"
+                        label="Use GPU Backend Acceleration"
                     )
                     gpu_layers = gr.Number(
                         value=-1,
-                        label="GPU Layers to Offload (--gpulayers, -1 for auto)",
-                        precision=0
+                        label="GPU Layers (Auto-offloaded in qwentts)",
+                        precision=0,
+                        visible=False
                     )
                     with gr.Row():
                         threads = gr.Number(
                             value=0,
-                            label="Main Threads (0 for default)",
+                            label="GGML CPU Threads (0 for default)",
                             precision=0
                         )
                         tts_threads = gr.Number(
                             value=0,
-                            label="TTS Threads (0 for default)",
-                            precision=0
+                            label="TTS Threads (Ignored)",
+                            precision=0,
+                            visible=False
                         )
                     debug_logs = gr.Checkbox(
                         value=False,

@@ -1,5 +1,13 @@
-# KoboldCPP executable binary
+# KoboldCPP & QwenTTS executable binaries
 koboldcpp.exe
+qwen-tts-server.exe
+
+# Source compilation code
+qwentts_src/
+build/
+dist/
+*.egg-info/
+uv.lock
 
 # KoboldCPP temp files
 tmp_temp/
@@ -10,5 +18,6 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Local logs
+# Local logs and test audio outputs
 *.log
+*.wav
