@@ -3,7 +3,11 @@ import sys
 import shutil
 import gradio as gr
 import socket
+import json
+import time
 from qwencpp_wrapper import start_server, shutdown_server, clone_voice, design_voice, config
+
+languages_list = ["English", "Chinese", "Japanese", "Korean", "German", "French", "Russian", "Portuguese", "Spanish", "Italian"]
 
 # Check if the KoboldCPP server port is open
 def check_status():
@@ -139,6 +143,149 @@ def ui_design_voice(text, prompt, output_name):
         return None, f"Voice design failed: {e}"
 
 # Get list of .wav voice files
+
+
+def render_history_html(history):
+    if not history:
+        return "<div style='color: #9CA3AF; text-align: center; padding: 2rem;'>No designed voices in this session yet. Enter text below and click 'Design & Synthesize'!</div>"
+    
+    # Group items by phrase text
+    grouped = {}
+    for item in history:
+        phrase = item["phrase"]
+        if phrase not in grouped:
+            grouped[phrase] = []
+        grouped[phrase].append(item)
+        
+    html = "<div class='history-container' style='display: flex; flex-direction: column; gap: 1.25rem; margin-top: 1rem; max-height: 500px; overflow-y: auto; padding-right: 0.5rem;'>"
+    
+    # We collect unique phrases in reverse order of their first appearance to show latest at top
+    ordered_phrases = []
+    for item in reversed(history):
+        if item["phrase"] not in ordered_phrases:
+            ordered_phrases.append(item["phrase"])
+            
+    for phrase in ordered_phrases:
+        clips = grouped[phrase]
+        html += f'''
+        <div class="phrase-group" style="padding: 1rem; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08); background: rgba(17, 24, 39, 0.45); backdrop-filter: blur(8px); display: flex; flex-direction: column; gap: 0.75rem;">
+            <div style="border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 0.4rem; margin-bottom: 0.1rem; display: flex; justify-content: space-between; align-items: center;">
+                <h4 style="margin: 0; color: #818CF8; font-size: 0.95rem; font-weight: 700; word-break: break-all;">Phrase: "{phrase}"</h4>
+                <span style="font-size: 0.75rem; color: #9CA3AF; background: rgba(255,255,255,0.05); padding: 0.1rem 0.4rem; border-radius: 4px;">{len(clips)} clips</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+        '''
+        
+        for clip in clips:
+            idx = clip["index"]
+            status = clip["status"]
+            audio_url = clip.get("audio_path")
+            json_url = clip.get("json_path")
+            
+            status_badge = "🟢" if status == "Success" else "🔴"
+            
+            html += f'''
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.35rem 0; border-bottom: 1px dashed rgba(255, 255, 255, 0.03); flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 0.4rem; min-width: 80px;">
+                    <span style="font-size: 0.8rem; font-weight: 600; color: #E5E7EB;">Clip #{idx}</span>
+                    <span style="font-size: 0.75rem; color: #9CA3AF;">{status_badge}</span>
+                </div>
+            '''
+            
+            if status == "Success":
+                html += f'''
+                <audio src="{audio_url}" controls style="height: 28px; max-width: 280px; flex-grow: 1;"></audio>
+                <div style="display: flex; gap: 0.4rem;">
+                    <a href="{audio_url}" download="voice_clip_{idx}.wav" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.3rem 0.6rem; border-radius: 5px; border: 1px solid rgba(129, 140, 248, 0.25); background: rgba(99, 102, 241, 0.1); color: #818CF8; font-size: 0.75rem; text-decoration: none; font-weight: 600; transition: all 0.2s ease;">📥 WAV</a>
+                    <a href="{json_url}" download="meta_clip_{idx}.json" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.3rem 0.6rem; border-radius: 5px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); color: #D1D5DB; font-size: 0.75rem; text-decoration: none; font-weight: 600; transition: all 0.2s ease;">📄 JSON</a>
+                </div>
+                '''
+            else:
+                html += f"<div style='color: #EF4444; font-size: 0.75rem;'>Error: {clip.get('error_msg', 'Unknown error')}</div>"
+                
+            html += "</div>"
+            
+        html += "</div></div>"
+    html += "</div>"
+    return html
+
+def ui_design_voice_batch(text, language, prompt, multiplier, history):
+    if not prompt.strip():
+        raise gr.Error("Error: Instruction prompt cannot be empty.")
+    if not text.strip():
+        raise gr.Error("Error: Please enter text to generate.")
+        
+    try:
+        if "🔴" in check_status():
+            raise gr.Error("Error: Server is offline. Please start the server first.")
+        
+        phrases = [line.strip() for line in text.split("\n") if line.strip()]
+        if not phrases:
+            raise gr.Error("Error: Please enter at least one non-empty phrase.")
+            
+        total_steps = len(phrases) * int(multiplier)
+        step_count = 0
+        
+        if history is None:
+            history = []
+            
+        yield history, render_history_html(history), f"Starting batch generation: {len(phrases)} phrases x {multiplier} repetitions = {total_steps} clips."
+        
+        output_dir = os.path.join(os.getcwd(), "assets", "designed_audio")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        for i, phrase in enumerate(phrases):
+            for rep in range(1, int(multiplier) + 1):
+                step_count += 1
+                progress_msg = f"Generating Phrase {i+1}/{len(phrases)} ('{phrase[:20]}...') | Clip {rep}/{multiplier} (Step {step_count}/{total_steps})..."
+                yield history, render_history_html(history), progress_msg
+                
+                try:
+                    timestamp = int(time.time() * 1000)
+                    wav_filename = f"design_{timestamp}_{step_count}.wav"
+                    wav_filepath = os.path.join(output_dir, wav_filename)
+                    
+                    full_prompt = f"language: {language}. {prompt}" if language else prompt
+                    
+                    design_voice(phrase, full_prompt, wav_filepath)
+                    
+                    json_filename = f"design_{timestamp}_{step_count}.json"
+                    json_filepath = os.path.join(output_dir, json_filename)
+                    meta = {
+                        "prompt": full_prompt,
+                        "text": phrase
+                    }
+                    with open(json_filepath, "w", encoding="utf-8") as f:
+                        json.dump(meta, f, indent=2, ensure_ascii=False)
+                    
+                    rel_wav = os.path.relpath(wav_filepath, os.getcwd()).replace("\\", "/")
+                    rel_json = os.path.relpath(json_filepath, os.getcwd()).replace("\\", "/")
+                    
+                    audio_url = f"/file={rel_wav}"
+                    json_url = f"/file={rel_json}"
+                    
+                    history.append({
+                        "phrase": phrase,
+                        "index": rep,
+                        "audio_path": audio_url,
+                        "json_path": json_url,
+                        "status": "Success"
+                    })
+                except Exception as e:
+                    print(f"Error generating phrase '{phrase}' clip {rep}: {e}")
+                    history.append({
+                        "phrase": phrase,
+                        "index": rep,
+                        "status": "Failed",
+                        "error_msg": str(e)
+                    })
+                    
+                yield history, render_history_html(history), progress_msg
+                
+        yield history, render_history_html(history), "✅ Batch generation complete! Finished " + str(total_steps) + " clips."
+    except Exception as e:
+        raise gr.Error(f"Voice design batch generation failed: {e}")
+
 def get_voice_list(voices_dir):
     if not voices_dir or not os.path.exists(voices_dir):
         return []
@@ -331,12 +478,6 @@ def launch_ui(auto_start_args=None):
                     with gr.Tab("🎨 Voice Design", id="design_tab"):
                         gr.Markdown("Design a voice using characteristics and descriptions.")
                         
-                        design_text = gr.Textbox(
-                            label="Text to Speak", 
-                            placeholder="Type the text you want the designed voice to speak...", 
-                            lines=3
-                        )
-                        
                         preset_dropdown = gr.Dropdown(
                             choices=["Warm Female", "Deep Male", "Cheerful Child", "Standard Narrator", "Custom"], 
                             value="Warm Female", 
@@ -358,14 +499,46 @@ def launch_ui(auto_start_args=None):
                             lines=2
                         )
                         
-                        design_output_name = gr.Textbox(
-                            value="designed_voice_output.wav", 
-                            label="Save Output Filename"
+                        lang_design_dd = gr.Dropdown(
+                            label="Language", 
+                            choices=languages_list, 
+                            value="English"
                         )
                         
-                        btn_design = gr.Button("⚡ Generate Designed Voice", variant="primary")
-                        design_audio = gr.Audio(label="Generated Audio", type="filepath")
-                        design_status = gr.Textbox(label="Status Log", interactive=False)
+                        design_text = gr.Textbox(
+                            label="Speech Input Text (Enter one phrase per line for batch generation)", 
+                            placeholder="Type the text you want the designed voice to speak...\nEach line will be generated as a separate clip.", 
+                            lines=5
+                        )
+                        
+                        with gr.Row():
+                            multiplier_slider = gr.Slider(
+                                minimum=1, 
+                                maximum=5, 
+                                value=1, 
+                                step=1, 
+                                label="Generation Multiplier (Runs per phrase)"
+                            )
+                            stream_design_cb = gr.Checkbox(
+                                label="Enable Low-Latency Optimization (Ignored by QwenCPP)", 
+                                value=False
+                            )
+                        
+                        btn_design = gr.Button("✨ Design & Synthesize", variant="primary")
+                        
+                        # Progress & History
+                        design_progress = gr.Textbox(
+                            label="Generation Progress", 
+                            value="Ready.", 
+                            interactive=False
+                        )
+                        design_history_html = gr.HTML(
+                            label="Generated Audio History", 
+                            value=render_history_html([])
+                        )
+                        
+                        # State to keep history list
+                        design_history_state = gr.State(value=[])
 
         # Wire events
         action_mode.change(on_mode_change, inputs=action_mode, outputs=model_path)
@@ -416,9 +589,9 @@ def launch_ui(auto_start_args=None):
         )
         
         btn_design.click(
-            ui_design_voice,
-            inputs=[design_text, prompt_box, design_output_name],
-            outputs=[design_audio, design_status]
+            ui_design_voice_batch,
+            inputs=[design_text, lang_design_dd, prompt_box, multiplier_slider, design_history_state],
+            outputs=[design_history_state, design_history_html, design_progress]
         )
         
         # Shutdown server automatically when Gradio shuts down
