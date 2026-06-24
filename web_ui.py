@@ -234,27 +234,42 @@ def render_history_html(history):
         html += "</div></div>"
     html += "</div>"
     
-    # Inject JavaScript triggers
+    # Inject JavaScript triggers using hidden buttons to bypass Svelte reactive state blocks
     html += '''<script>
     function deleteClip(audioPath) {
         const el = document.querySelector("#delete_trigger textarea") || document.querySelector("#delete_trigger input");
-        if (el) {
+        const btn = document.querySelector("#delete_btn button") || document.querySelector("#delete_btn input") || document.querySelector("#delete_btn");
+        if (el && btn) {
             el.value = audioPath;
             el.dispatchEvent(new Event("input", { bubbles: true }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+            btn.click();
+        } else {
+            console.error("Delete elements not found:", {el, btn});
         }
     }
     function deletePhrase(phraseText) {
         const el = document.querySelector("#delete_phrase_trigger textarea") || document.querySelector("#delete_phrase_trigger input");
-        if (el) {
+        const btn = document.querySelector("#delete_phrase_btn button") || document.querySelector("#delete_phrase_btn input") || document.querySelector("#delete_phrase_btn");
+        if (el && btn) {
             el.value = phraseText;
             el.dispatchEvent(new Event("input", { bubbles: true }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+            btn.click();
+        } else {
+            console.error("Delete Phrase elements not found:", {el, btn});
         }
     }
     function saveClipToVoices(audioPath) {
         const el = document.querySelector("#save_trigger textarea") || document.querySelector("#save_trigger input");
-        if (el) {
+        const btn = document.querySelector("#save_btn button") || document.querySelector("#save_btn input") || document.querySelector("#save_btn");
+        if (el && btn) {
             el.value = audioPath;
             el.dispatchEvent(new Event("input", { bubbles: true }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+            btn.click();
+        } else {
+            console.error("Save elements not found:", {el, btn});
         }
     }
     </script>'''
@@ -543,7 +558,7 @@ def launch_ui(auto_start_args=None):
             print(f"[UI] Autostart failed: {e}")
 
     custom_css = """
-    #delete_trigger, #delete_phrase_trigger, #save_trigger {
+    #delete_trigger, #delete_phrase_trigger, #save_trigger, #delete_btn, #delete_phrase_btn, #save_btn {
         display: none !important;
     }
     """
@@ -554,10 +569,14 @@ def launch_ui(auto_start_args=None):
             An interactive dashboard to manage Qwen3-TTS (qwentts.cpp) and generate voice cloning/design outputs.
             """
         )
-        # Hidden inputs for browser JS triggers
-        delete_trigger = gr.Textbox(visible=True, elem_id="delete_trigger")
-        delete_phrase_trigger = gr.Textbox(visible=True, elem_id="delete_phrase_trigger")
-        save_trigger = gr.Textbox(visible=True, elem_id="save_trigger")
+        # Hidden inputs and buttons for browser JS triggers
+        delete_trigger = gr.Textbox(visible=True, elem_id="delete_trigger", interactive=True)
+        delete_phrase_trigger = gr.Textbox(visible=True, elem_id="delete_phrase_trigger", interactive=True)
+        save_trigger = gr.Textbox(visible=True, elem_id="save_trigger", interactive=True)
+        
+        delete_btn = gr.Button(visible=True, elem_id="delete_btn")
+        delete_phrase_btn = gr.Button(visible=True, elem_id="delete_phrase_btn")
+        save_btn = gr.Button(visible=True, elem_id="save_btn")
         
         with gr.Row():
             # Server controls sidebar
@@ -803,20 +822,20 @@ def launch_ui(auto_start_args=None):
         btn_stop_clone.click(ui_stop_generation, outputs=clone_status)
         btn_stop_design.click(ui_stop_generation, outputs=design_progress)
         
-        # Wiring for browser-triggered Delete events
-        delete_trigger.change(
+        # Wiring for browser-triggered Delete events via hidden buttons
+        delete_btn.click(
             on_delete_clip, 
             inputs=[delete_trigger, design_history_state], 
             outputs=[design_history_state, design_history_html]
         )
-        delete_phrase_trigger.change(
+        delete_phrase_btn.click(
             on_delete_phrase, 
             inputs=[delete_phrase_trigger, design_history_state], 
             outputs=[design_history_state, design_history_html]
         )
         
-        # Wiring for browser-triggered Save events
-        save_trigger.change(
+        # Wiring for browser-triggered Save events via hidden button
+        save_btn.click(
             on_save_clip,
             inputs=[save_trigger, voices_dir, design_history_state],
             outputs=[design_progress, voice_dropdown]
