@@ -11,11 +11,25 @@ from qwencpp_wrapper import start_server, shutdown_server, clone_voice, design_v
 languages_list = ["English", "Chinese", "Japanese", "Korean", "German", "French", "Russian", "Portuguese", "Spanish", "Italian"]
 
 cancel_generation = False
+session_temp_files = []
 
 def ui_stop_generation():
     global cancel_generation
     cancel_generation = True
-    return "Stop request sent. Wait for active generation to stop." 
+    return "Stop request sent. Wait for active generation to stop."
+
+def on_ui_unload():
+    # Stop server
+    shutdown_server()
+    # Clean up temp files
+    print("[UI] Cleaning up temporary session files...")
+    for path in session_temp_files:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+                print(f"[UI] Cleaned up: {path}")
+        except Exception as e:
+            print(f"[UI] Error cleaning up {path}: {e}")
 
 # Check if the KoboldCPP server port is open
 def check_status():
@@ -301,6 +315,10 @@ def ui_design_voice_batch(text, language, prompt, multiplier, history):
                     }
                     with open(json_filepath, "w", encoding="utf-8") as f:
                         json.dump(meta, f, indent=2, ensure_ascii=False)
+                        
+                    # Track for automatic cleanup on exit
+                    session_temp_files.append(wav_filepath)
+                    session_temp_files.append(json_filepath)
                     
                     # Convert to absolute path formatted for Gradio 5/6 API URL
                     abs_wav = os.path.abspath(wav_filepath).replace("\\", "/")
@@ -804,8 +822,8 @@ def launch_ui(auto_start_args=None):
             outputs=[design_progress, voice_dropdown]
         )
         
-        # Shutdown server automatically when Gradio shuts down
-        demo.unload(shutdown_server)
+        # Shutdown server and clean up temp files when Gradio shuts down
+        demo.unload(on_ui_unload)
         
     demo.launch(inbrowser=True, allowed_paths=[os.getcwd(), tempfile.gettempdir(), "c:/", "C:/", "d:/", "D:/"])
 
