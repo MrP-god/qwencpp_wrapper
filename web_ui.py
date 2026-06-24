@@ -1,6 +1,7 @@
 import os
 import sys
 import shutil
+import tempfile
 import gradio as gr
 import socket
 import json
@@ -207,6 +208,7 @@ def render_history_html(history):
                 <div style="display: flex; gap: 0.4rem;">
                     <a href="{audio_url}" download="voice_clip_{idx}.wav" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.3rem 0.6rem; border-radius: 5px; border: 1px solid rgba(129, 140, 248, 0.25); background: rgba(99, 102, 241, 0.1); color: #818CF8; font-size: 0.75rem; text-decoration: none; font-weight: 600; transition: all 0.2s ease;">📥 WAV</a>
                     <a href="{json_url}" download="meta_clip_{idx}.json" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.3rem 0.6rem; border-radius: 5px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); color: #D1D5DB; font-size: 0.75rem; text-decoration: none; font-weight: 600; transition: all 0.2s ease;">📄 JSON</a>
+                    <button onclick="saveClipToVoices('{audio_url}')" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.3rem 0.6rem; border-radius: 5px; border: 1px solid rgba(16, 185, 129, 0.25); background: rgba(16, 185, 129, 0.1); color: #10B981; font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease;">💾 Save to Voices</button>
                     <button onclick="deleteClip('{audio_url}')" style="display: inline-flex; align-items: center; justify-content: center; padding: 0.3rem 0.6rem; border-radius: 5px; border: 1px solid rgba(239, 68, 68, 0.25); background: rgba(239, 68, 68, 0.1); color: #EF4444; font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease;">🗑️ Delete</button>
                 </div>
                 '''
@@ -231,6 +233,13 @@ def render_history_html(history):
         const el = document.querySelector("#delete_phrase_trigger textarea") || document.querySelector("#delete_phrase_trigger input");
         if (el) {
             el.value = phraseText;
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+    }
+    function saveClipToVoices(audioPath) {
+        const el = document.querySelector("#save_trigger textarea") || document.querySelector("#save_trigger input");
+        if (el) {
+            el.value = audioPath;
             el.dispatchEvent(new Event("input", { bubbles: true }));
         }
     }
@@ -262,8 +271,8 @@ def ui_design_voice_batch(text, language, prompt, multiplier, history):
             
         yield history, render_history_html(history), f"Starting batch generation: {len(phrases)} phrases x {multiplier} repetitions = {total_steps} clips."
         
-        output_dir = os.path.join(os.getcwd(), "assets", "designed_audio")
-        os.makedirs(output_dir, exist_ok=True)
+        # Save dynamically to temp folder so Gradio serves it correctly without path mismatches
+        output_dir = tempfile.gettempdir()
         
         for i, phrase in enumerate(phrases):
             if cancel_generation:
@@ -293,12 +302,13 @@ def ui_design_voice_batch(text, language, prompt, multiplier, history):
                     with open(json_filepath, "w", encoding="utf-8") as f:
                         json.dump(meta, f, indent=2, ensure_ascii=False)
                     
-                    # Convert to absolute path formatted for Gradio server url
+                    # Convert to absolute path formatted for Gradio 5/6 API URL
                     abs_wav = os.path.abspath(wav_filepath).replace("\\", "/")
                     abs_json = os.path.abspath(json_filepath).replace("\\", "/")
                     
-                    audio_url = f"/file={abs_wav}"
-                    json_url = f"/file={abs_json}"
+                    # Prefix with /gradio_api/file= for routing
+                    audio_url = f"/gradio_api/file={abs_wav}"
+                    json_url = f"/gradio_api/file={abs_json}"
                     
                     history.append({
                         "phrase": phrase,
@@ -329,7 +339,9 @@ def on_delete_clip(audio_path, history):
     if not audio_path or history is None:
         return history, render_history_html(history)
         
-    if audio_path.startswith("/file="):
+    if audio_path.startswith("/gradio_api/file="):
+        path = audio_path[17:]
+    elif audio_path.startswith("/file="):
         path = audio_path[6:]
     elif audio_path.startswith("file="):
         path = audio_path[5:]
@@ -360,6 +372,8 @@ def on_delete_clip(audio_path, history):
     for item in history:
         item_path = item.get("audio_path", "")
         def get_abs(p):
+            if p.startswith("/gradio_api/file="):
+                return os.path.abspath(p[17:])
             if p.startswith("/file="):
                 return os.path.abspath(p[6:])
             return os.path.abspath(p)
@@ -376,7 +390,9 @@ def on_delete_phrase(phrase, history):
         if item.get("phrase") == phrase:
             audio_path = item.get("audio_path", "")
             if audio_path:
-                if audio_path.startswith("/file="):
+                if audio_path.startswith("/gradio_api/file="):
+                    path = os.path.abspath(audio_path[17:])
+                elif audio_path.startswith("/file="):
                     path = os.path.abspath(audio_path[6:])
                 else:
                     path = os.path.abspath(audio_path)
@@ -395,6 +411,54 @@ def on_delete_phrase(phrase, history):
                     
     new_history = [item for item in history if item.get("phrase") != phrase]
     return new_history, render_history_html(new_history)
+
+def on_save_clip(audio_path, voices_dir_path, history):
+    if not audio_path or not voices_dir_path:
+        return "Error: Voices folder path is empty.", gr.skip()
+        
+    if not os.path.exists(voices_dir_path):
+        try:
+            os.makedirs(voices_dir_path, exist_ok=True)
+        except Exception as e:
+            return f"Error: Voices folder does not exist and could not be created: {e}", gr.skip()
+            
+    if audio_path.startswith("/gradio_api/file="):
+        path = audio_path[17:]
+    elif audio_path.startswith("/file="):
+        path = audio_path[6:]
+    else:
+        path = audio_path
+        
+    path = os.path.abspath(path)
+    
+    if not os.path.exists(path):
+        return f"Error: Temp file not found: {path}", gr.skip()
+        
+    json_path = os.path.splitext(path)[0] + ".json"
+    phrase_text = ""
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+                phrase_text = meta.get("text", "")
+        except Exception:
+            pass
+            
+    try:
+        filename = os.path.basename(path)
+        dest_wav = os.path.join(voices_dir_path, filename)
+        shutil.copy(path, dest_wav)
+        
+        # Write matching transcript file for voice cloning template
+        dest_txt = os.path.splitext(dest_wav)[0] + ".txt"
+        with open(dest_txt, "w", encoding="utf-8") as f:
+            f.write(phrase_text)
+            
+        print(f"[UI] Saved designed voice to: {dest_wav}")
+        new_voices = get_voice_list(voices_dir_path)
+        return f"Success! Saved clip as '{filename}' to Voices folder.", gr.Dropdown(choices=new_voices)
+    except Exception as e:
+        return f"Failed to save clip: {e}", gr.skip()
 
 def get_voice_list(voices_dir):
     if not voices_dir or not os.path.exists(voices_dir):
@@ -461,7 +525,7 @@ def launch_ui(auto_start_args=None):
             print(f"[UI] Autostart failed: {e}")
 
     custom_css = """
-    #delete_trigger, #delete_phrase_trigger {
+    #delete_trigger, #delete_phrase_trigger, #save_trigger {
         display: none !important;
     }
     """
@@ -475,6 +539,7 @@ def launch_ui(auto_start_args=None):
         # Hidden inputs for browser JS triggers
         delete_trigger = gr.Textbox(visible=True, elem_id="delete_trigger")
         delete_phrase_trigger = gr.Textbox(visible=True, elem_id="delete_phrase_trigger")
+        save_trigger = gr.Textbox(visible=True, elem_id="save_trigger")
         
         with gr.Row():
             # Server controls sidebar
@@ -732,10 +797,17 @@ def launch_ui(auto_start_args=None):
             outputs=[design_history_state, design_history_html]
         )
         
+        # Wiring for browser-triggered Save events
+        save_trigger.change(
+            on_save_clip,
+            inputs=[save_trigger, voices_dir, design_history_state],
+            outputs=[design_progress, voice_dropdown]
+        )
+        
         # Shutdown server automatically when Gradio shuts down
         demo.unload(shutdown_server)
         
-    demo.launch(inbrowser=True, allowed_paths=[os.getcwd()])
+    demo.launch(inbrowser=True, allowed_paths=[os.getcwd(), tempfile.gettempdir(), "c:/", "C:/", "d:/", "D:/"])
 
 if __name__ == "__main__":
     launch_ui()
